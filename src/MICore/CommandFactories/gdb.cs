@@ -3,17 +3,13 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using System.IO;
-using System.Text;
-using System.Collections.ObjectModel;
-using System.Linq;
 using System.Globalization;
 
 namespace MICore
 {
-    internal class GdbMICommandFactory : MICommandFactory
+    internal sealed class GdbMICommandFactory : MICommandFactory
     {
         private int _currentThreadId = 0;
         private uint _currentFrameLevel = 0;
@@ -181,6 +177,12 @@ namespace MICore
                 }
             }
             return addresses;
+        }
+
+        public override async Task<string[]> GetTargetFeatures()
+        {
+            Results results = await _debugger.CmdAsync("-list-target-features", ResultClass.done);
+            return results.Find<ValueListValue>("features").AsStrings;
         }
 
         public override Task EnableTargetAsyncOption()

@@ -792,6 +792,7 @@ namespace MICore
         private static Lazy<Assembly> s_serializationAssembly = new Lazy<Assembly>(LoadSerializationAssembly, LazyThreadSafetyMode.ExecutionAndPublication);
         private bool _initializationComplete;
         private MIMode _miMode;
+        private ExtendedRemote _extendedRemote;
 
         /// <summary>
         /// [Optional] Launcher used to start the application on the device
@@ -806,6 +807,12 @@ namespace MICore
                 VerifyCanModifyProperty(nameof(DebuggerMIMode));
                 _miMode = value;
             }
+        }
+
+        public ExtendedRemote ExtendedRemote
+        {
+            get { return _extendedRemote; }
+            set { this._extendedRemote = value; }
         }
 
         public bool NoDebug { get; private set; } = false;
@@ -1907,6 +1914,13 @@ namespace MICore
             }
 
             this.Environment = new ReadOnlyCollection<EnvironmentEntry>(GetEnvironmentEntries(launch.Environment));
+
+            this.ExtendedRemote = new ExtendedRemote();
+            if( launch.ExtendedRemote != null && 
+                launch.ExtendedRemote.Pid != null) {
+            
+                this.ExtendedRemote.Pid = (int)launch.ExtendedRemote.Pid;
+            }
         }
 
         public void InitializeAttachOptions(Json.LaunchOptions.AttachOptions attach)

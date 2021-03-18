@@ -401,6 +401,28 @@ namespace MICore.Xml.LaunchOptions {
     [System.Diagnostics.DebuggerStepThroughAttribute()]
     [System.ComponentModel.DesignerCategoryAttribute("code")]
     [System.Xml.Serialization.XmlTypeAttribute(Namespace="http://schemas.microsoft.com/vstudio/MDDDebuggerOptions/2014")]
+    public class ExtendedRemote
+    {
+        private int pid;
+
+        /// <remarks/>
+        [System.Xml.Serialization.XmlAttributeAttribute()]
+        public int Pid {
+            get {
+                return this.pid;
+            }
+            set {
+                this.pid = value;
+            }
+        }
+    }
+    
+    /// <remarks/>
+    [System.CodeDom.Compiler.GeneratedCodeAttribute("xsd", "4.7.3081.0")]
+    [System.SerializableAttribute()]
+    [System.Diagnostics.DebuggerStepThroughAttribute()]
+    [System.ComponentModel.DesignerCategoryAttribute("code")]
+    [System.Xml.Serialization.XmlTypeAttribute(Namespace="http://schemas.microsoft.com/vstudio/MDDDebuggerOptions/2014")]
     public partial class AttachOptionsForConnection {
         
         private Command[] setupCommandsField;

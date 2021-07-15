@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft. All rights reserved.
+﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -797,7 +797,7 @@ namespace OpenDebugAD7
             InitializeResponse initializeResponse = new InitializeResponse()
             {
                 SupportsConfigurationDoneRequest = true,
-                SupportsCompletionsRequest = m_engine is IDebugProgramDAP,
+                SupportsCompletionsRequest = true /*m_engine is IDebugProgramDAP*/,
                 SupportsEvaluateForHovers = true,
                 SupportsSetVariable = true,
                 SupportsFunctionBreakpoints = m_engineConfiguration.FunctionBP,
@@ -2379,14 +2379,16 @@ namespace OpenDebugAD7
                 command = command.Substring(6);
             try
             {
-                var debugProgram = (IDebugProgramDAP)m_engine;
-                if (debugProgram.AutoCompleteCommand(command, frame, out string[] results) != HRConstants.S_OK)
+                var methodInfo = m_engine.GetType().GetInterface("IDebugProgramDAP").GetMethod("AutoCompleteCommand");
+                var parameters = new object[] { command, frame, null };
+                var errcode = (int)methodInfo.Invoke(m_program, parameters);
+                if (errcode != HRConstants.S_OK)
                 {
                     responder.SetError(new ProtocolException("Couldn't get results for auto-completion!"));
                     return;
                 }
                 var matchlist = new List<CompletionItem>();
-                foreach (string result in results)
+                foreach (string result in (string[])parameters[2])
                 {
                     matchlist.Add(new CompletionItem(result)
                     {

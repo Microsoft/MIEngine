@@ -133,3 +133,4 @@ log_and_exec_cmd "dotnet build ${__ScriptDirectory}/src/MIDebugEngine-Unix.sln -
 log_and_exec_cmd "dotnet publish ${__ScriptDirectory}/src/OpenDebugAD7/OpenDebugAD7.csproj ${__DotnetPublishArgs}"
 log_and_exec_cmd "cp ${__ScriptDirectory}/bin/${__Configuration}/Microsoft.MIDebugEngine.dll ${__OutputFolder}/."
 log_and_exec_cmd "cp ${__ScriptDirectory}/bin/${__Configuration}/Microsoft.MICore.dll ${__OutputFolder}/."
+log_and_exec_cmd "cp ${__ScriptDirectory}/bin/${__Configuration}/Microsoft.VisualStudio.Debugger.Interop.DAP.dll ${__OutputFolder}/."

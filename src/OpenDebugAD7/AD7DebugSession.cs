@@ -366,7 +366,7 @@ namespace OpenDebugAD7
             m_gotoCodeContexts.Clear();
         }
 
-        public void Stopped(IDebugThread2 thread)
+        private void Stopped(IDebugThread2 thread)
         {
             Debug.Assert(m_variableManager.IsEmpty(), "Why do we have variable handles?");
             Debug.Assert(m_frameHandles.IsEmpty, "Why do we have frame handles?");
@@ -376,6 +376,7 @@ namespace OpenDebugAD7
         internal void FireStoppedEvent(IDebugThread2 thread, StoppedEvent.ReasonValue reason, string text = null)
         {
             Stopped(thread);
+            UpdateCapabilities();
 
             // Switch to another thread as engines may not expect to be called back on their event thread
             ThreadPool.QueueUserWorkItem((o) =>
@@ -618,7 +619,7 @@ namespace OpenDebugAD7
             }
         }
 
-        private void StepInternal(int threadId, enum_STEPKIND stepKind, enum_STEPUNIT stepUnit, string errorMessage)
+        private void StepInternal(int threadId, enum_STEPKIND stepKind, enum_STEPUNIT stepUnit, ExecuteDirection stepDirection, string errorMessage)
         {
             // If we are already running ignore additional step requests
             if (m_isStopped)
@@ -637,6 +638,7 @@ namespace OpenDebugAD7
                 m_isStepping = true;
                 try
                 {
+                    ((IDebugReversibleEngineProgram160)m_engine).SetExecuteDirection(stepDirection);
                     builder.CheckHR(m_program.Step(thread, stepKind, stepUnit));
                 }
                 catch (AD7Exception)
@@ -815,6 +817,27 @@ namespace OpenDebugAD7
             responder.SetResponse(initializeResponse);
         }
 
+        private bool m_canReverse = false;
+        private void UpdateCapabilities()
+        {
+            bool canReverse = ((IDebugReversibleEngineProgram160)m_engine).CanReverse() == HRConstants.S_OK;
+            if (canReverse == m_canReverse)
+                return;
+
+            m_canReverse = canReverse;
+            Protocol.SendEvent(new CapabilitiesEvent()
+            {
+                Capabilities = new Capabilities()
+                {
+                    SupportsStepBack = canReverse,
+                    ExceptionBreakpointFilters = null, // FIXME: this is just to prevent unwanted response entries
+                    CompletionTriggerCharacters = null,
+                    AdditionalModuleColumns = null,
+                    SupportedChecksumAlgorithms = null,
+                }
+            });
+        }
+
         protected override void HandleLaunchRequestAsync(IRequestResponder<LaunchArguments> responder)
         {
             const string telemetryEventName = DebuggerTelemetry.TelemetryLaunchEventName;
@@ -942,6 +965,8 @@ namespace OpenDebugAD7
 
                     eb.ThrowHR(hr);
                 }
+
+                UpdateCapabilities();
 
                 hr = m_engineLaunch.ResumeProcess(m_process);
                 if (hr < 0)
@@ -1137,6 +1162,8 @@ namespace OpenDebugAD7
                     eb.ThrowHR(hr);
                 }
 
+                UpdateCapabilities();
+
                 hr = m_engineLaunch.ResumeProcess(m_process);
                 if (hr < 0)
                 {
@@ -1251,7 +1278,7 @@ namespace OpenDebugAD7
         {
             try
             {
-                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_OVER, enum_STEPUNIT.STEP_STATEMENT, AD7Resources.Error_Scenario_Step_Next);
+                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_OVER, enum_STEPUNIT.STEP_STATEMENT, ExecuteDirection.ExecuteDirection_Forward, AD7Resources.Error_Scenario_Step_Next);
                 responder.SetResponse(new NextResponse());
             }
             catch (AD7Exception e)
@@ -1260,10 +1287,8 @@ namespace OpenDebugAD7
             }
         }
 
-        protected override void HandleContinueRequestAsync(IRequestResponder<ContinueArguments, ContinueResponse> responder)
+        private void ContinueInternal(int threadId, ExecuteDirection direction)
         {
-            int threadId = responder.Arguments.ThreadId;
-
             // Sometimes we can get a threadId of 0. Make sure we don't look it up in this case, otherwise we will crash.
             IDebugThread2 thread = null;
             lock (m_threads)
@@ -1282,13 +1307,9 @@ namespace OpenDebugAD7
             bool succeeded = false;
             try
             {
+                ((IDebugReversibleEngineProgram160)m_engine).SetExecuteDirection(direction);
                 builder.CheckHR(m_program.Continue(thread));
                 succeeded = true;
-                responder.SetResponse(new ContinueResponse());
-            }
-            catch (AD7Exception e)
-            {
-                responder.SetError(new ProtocolException(e.Message));
             }
             finally
             {
@@ -1299,13 +1320,39 @@ namespace OpenDebugAD7
             }
         }
 
+        protected override void HandleContinueRequestAsync(IRequestResponder<ContinueArguments, ContinueResponse> responder)
+        {
+            try
+            {
+                ContinueInternal(responder.Arguments.ThreadId, ExecuteDirection.ExecuteDirection_Forward);
+                responder.SetResponse(new ContinueResponse());
+            }
+            catch (AD7Exception e)
+            {
+                responder.SetError(new ProtocolException(e.Message));
+            }
+        }
+
+        protected override void HandleReverseContinueRequestAsync(IRequestResponder<ReverseContinueArguments> responder)
+        {
+            try
+            {
+                ContinueInternal(responder.Arguments.ThreadId, ExecuteDirection.ExecuteDirection_Reverse);
+                responder.SetResponse(new ContinueResponse());
+            }
+            catch (AD7Exception e)
+            {
+                responder.SetError(new ProtocolException(e.Message));
+            }
+        }
+
         protected override void HandleStepInRequestAsync(IRequestResponder<StepInArguments> responder)
         {
             StepInResponse response = new StepInResponse();
 
             try
             {
-                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_INTO, enum_STEPUNIT.STEP_STATEMENT, AD7Resources.Error_Scenario_Step_In);
+                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_INTO, enum_STEPUNIT.STEP_STATEMENT, ExecuteDirection.ExecuteDirection_Forward, AD7Resources.Error_Scenario_Step_In);
                 responder.SetResponse(response);
             }
             catch (AD7Exception e)
@@ -1318,8 +1365,22 @@ namespace OpenDebugAD7
         {
             try
             {
-                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_OUT, enum_STEPUNIT.STEP_STATEMENT, AD7Resources.Error_Scenario_Step_Out);
+                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_OUT, enum_STEPUNIT.STEP_STATEMENT, ExecuteDirection.ExecuteDirection_Forward, AD7Resources.Error_Scenario_Step_Out);
                 responder.SetResponse(new StepOutResponse());
+            }
+            catch (AD7Exception e)
+            {
+                responder.SetError(new ProtocolException(e.Message));
+            }
+        }
+
+        protected override void HandleStepBackRequestAsync(IRequestResponder<StepBackArguments> responder)
+        {
+            try
+            {
+                var granularity = responder.Arguments.Granularity.GetValueOrDefault();
+                StepInternal(responder.Arguments.ThreadId, enum_STEPKIND.STEP_OVER, enum_STEPUNIT.STEP_STATEMENT, ExecuteDirection.ExecuteDirection_Reverse, AD7Resources.Error_Scenario_Step_Next);
+                responder.SetResponse(new StepBackResponse());
             }
             catch (AD7Exception e)
             {
@@ -2726,8 +2787,6 @@ namespace OpenDebugAD7
 
         public void HandleIDebugExceptionEvent2(IDebugEngine2 pEngine, IDebugProcess2 pProcess, IDebugProgram2 pProgram, IDebugThread2 pThread, IDebugEvent2 pEvent)
         {
-            Stopped(pThread);
-
             IDebugExceptionEvent2 exceptionEvent = (IDebugExceptionEvent2)pEvent;
 
             string exceptionDescription;
